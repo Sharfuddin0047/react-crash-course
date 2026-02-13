@@ -1,70 +1,254 @@
-# Getting Started with Create React App
+# 🚀 Jenkins + Docker CI/CD Setup
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+This project demonstrates a **simple CI/CD pipeline** where **Jenkins** automates the deployment process and **Docker** containerizes the application.  
+The pipeline builds a Docker image and runs a container on **port 80**, enabling fast and consistent deployments.
 
-## Available Scripts
+---
 
-In the project directory, you can run:
+# 📊 Architecture Overview
 
-### `npm start`
+**Flow:**  
+Developer → Git Repository → Jenkins Pipeline → Docker Build → Docker Container → Live Application
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+---
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+# 📌 Prerequisites
 
-### `npm test`
+Ensure the following requirements are met before starting:
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+- Linux Machine (**Ubuntu 22.04 or 24.04 recommended**)
+- Sudo privileges
+- Stable internet connection
+- Firewall / Security Group inbound rules:
+  - **Port 8080** → Jenkins
+  - **Port 80** → Application
 
-### `npm run build`
+---
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+# ⚙️ Step 1 – Install Jenkins
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+Jenkins requires **Java Runtime Environment (JRE)** to function.
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## Update System Packages
 
-### `npm run eject`
+```bash
+sudo apt update
+````
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+## Install Java
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+```bash
+sudo apt install fontconfig openjdk-21-jre
+java -version
+```
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+## Add Jenkins Repository and Key
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+```bash
+sudo wget -O /etc/apt/keyrings/jenkins-keyring.asc \
+  https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key
+echo "deb [signed-by=/etc/apt/keyrings/jenkins-keyring.asc]" \
+  https://pkg.jenkins.io/debian-stable binary/ | sudo tee \
+  /etc/apt/sources.list.d/jenkins.list > /dev/null
+```
 
-## Learn More
+## Install Jenkins
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+```bash
+sudo apt update
+sudo apt install jenkins -y
+```
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+## Start and Enable Jenkins
 
-### Code Splitting
+```bash
+sudo systemctl start jenkins
+sudo systemctl enable jenkins
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+## Verify Status
 
-### Analyzing the Bundle Size
+```bash
+sudo systemctl status jenkins
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+---
 
-### Making a Progressive Web App
+## 🔐 Access Jenkins
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+Open your browser:
 
-### Advanced Configuration
+```
+http://<your-server-ip>:8080
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+Retrieve the initial admin password:
 
-### Deployment
+```bash
+sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+---
 
-### `npm run build` fails to minify
+# 🐳 Step 2 – Install Docker
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+## Install Docker
+
+```bash
+sudo apt install docker.io -y
+```
+
+## Start and Enable Docker
+
+```bash
+sudo systemctl start docker
+sudo systemctl enable docker
+```
+
+## Verify Installation
+
+```bash
+docker --version
+```
+
+---
+
+# 👥 Step 3 – Add Users to Docker Group
+
+By default, the **jenkins user cannot access Docker**.
+Adding it to the Docker group allows execution without `sudo`.
+
+```bash
+# Add Jenkins and current user
+sudo usermod -aG docker jenkins
+sudo usermod -aG docker $USER
+
+# Apply group changes
+newgrp docker
+
+# Restart Jenkins
+sudo systemctl restart jenkins
+```
+
+---
+
+# 🧾 Step 4 – Create Jenkins Pipeline
+
+Create a file named **`Jenkinsfile`** in your project root directory.
+
+```groovy
+pipeline{
+    agent any
+    
+    environment {
+        DOCKER_USER = 'sharfuddin47'
+        IMAGE_NAME = 'spa'
+        BUILD_TAG   = "${env.BUILD_NUMBER}"
+    }
+    
+    stages {
+        stage('Clean'){
+            steps{
+               cleanWs()
+            }
+        }
+        stage('Code Checkout'){
+            steps{
+                echo "this is cloning the code"
+                git url: "https://github.com/Sharfuddin0047/react-crash-course.git", branch: "master"
+            }
+        }
+        stage("Image Build") {
+            steps{
+                echo "this is building the code"
+                sh '''
+                    docker build -t ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG} .
+                    '''
+            }
+        }
+        stage("Docker push and Deploy") {
+            parallel {
+                stage("Docker login") {
+                    steps {
+                        withCredentials([usernamePassword(credentialsId: 'dockerPAT', 
+                                                 usernameVariable: 'DOCKER_USERNAME', 
+                                                 passwordVariable: 'DOCKER_PASS')]){
+                                                     sh '''
+                                                        echo $DOCKER_PASS | docker login -u $DOCKER_USERNAME --password-stdin
+                                                        echo "docker login successful"
+                                                        docker push ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG}
+                                                        docker tag ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG} ${DOCKER_USER}/${IMAGE_NAME}:latest
+                                                        docker push ${DOCKER_USER}/${IMAGE_NAME}:latest
+                                                        '''
+                                                 }
+                    }
+                }
+                stage("Deploy") {
+                    steps {
+                        sh '''
+                            docker rm -f ${IMAGE_NAME} || echo "No old container"      
+                            docker run -d --name ${IMAGE_NAME} -p 80:80 ${DOCKER_USER}/${IMAGE_NAME}:${BUILD_TAG}
+                        '''
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo 'Good job pipeline succeded'
+        }
+        failure {
+            error 'Pipeline failed, check the logs'
+        }
+
+    }
+}
+```
+
+---
+
+# ▶️ Step 5 – Run the Pipeline
+
+1. Open **Jenkins Dashboard**
+2. Click **New Item**
+3. Enter a project name
+4. Select **Pipeline**
+5. Under Pipeline:
+
+   * Choose **Pipeline script from SCM** (recommended for GitHub),
+     **OR**
+   * Paste the script directly
+6. Click **Save**
+7. Select **Build Now**
+
+---
+
+# 🌐 Verify Deployment
+
+After a successful build, open:
+
+```
+http://<your-server-ip>
+```
+
+Your application should now be running inside a Docker container 🎉
+
+---
+
+# ✅ Outcome
+
+✔ Automated CI/CD — Build and deployment triggered via Jenkins
+✔ Containerization — Application runs in an isolated Docker environment
+✔ Improved Security — Jenkins executes Docker without root login
+✔ High Accessibility — App available on standard HTTP port **80**
+
+---
+
+# ⭐ Support
+
+If you found this project helpful, consider **giving it a star ⭐** on GitHub!
+
+
+
